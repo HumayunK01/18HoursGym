@@ -1,6 +1,7 @@
 import { prisma } from '../config/db.js';
 import { ROLES, PASS_STATUSES, PAYMENT_STATUSES, CLASS_STATUSES } from '../config/constants.js';
 import { NotFoundError } from '../types/api.types.js';
+import { logger } from '../utils/logger.js';
 
 export class AdminService {
   /**
@@ -122,21 +123,33 @@ export class AdminService {
       throw new NotFoundError('User not found.');
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      let revokedCount = 0;
       if (status === 'SUSPENDED') {
         // Immediately revoke all active sessions to terminate user access
-        await tx.session.updateMany({
+        const revoked = await tx.session.updateMany({
           where: { userId, revokedAt: null },
           data: { revokedAt: new Date() },
         });
+        revokedCount = revoked.count;
       }
 
-      return tx.user.update({
+      const updated = await tx.user.update({
         where: { id: userId },
         data: { status },
         select: { id: true, email: true, status: true },
       });
+
+      return { updated, revokedCount };
     });
+
+    logger.info(`Admin updated member status: ${userId} -> ${status}`, {
+      userId,
+      newStatus: status,
+      revokedSessions: result.revokedCount,
+    });
+
+    return result.updated;
   }
 
   /**

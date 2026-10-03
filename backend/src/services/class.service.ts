@@ -3,6 +3,7 @@ import { NotFoundError, AppError, ConflictError } from '../types/api.types.js';
 import { CLASS_STATUSES, BOOKING_STATUSES, HTTP_STATUS, ERROR_CODES } from '../config/constants.js';
 import { PassService } from './pass.service.js';
 import { CreateClassInput } from '../types/schemas/class.schema.js';
+import { logger } from '../utils/logger.js';
 
 export class ClassService {
   /**
@@ -32,6 +33,7 @@ export class ClassService {
           },
         },
       },
+      take: 100,
       orderBy: { startTime: 'asc' },
     });
 
@@ -126,24 +128,33 @@ export class ClassService {
         },
       });
 
+      let bookingRecord;
       if (existing) {
         if (existing.status === BOOKING_STATUSES.CONFIRMED) {
           throw new ConflictError('You have already booked a spot in this class.');
         }
         // Re-confirm if previously cancelled
-        return tx.booking.update({
+        bookingRecord = await tx.booking.update({
           where: { id: existing.id },
           data: { status: BOOKING_STATUSES.CONFIRMED, bookedAt: new Date() },
         });
+      } else {
+        bookingRecord = await tx.booking.create({
+          data: {
+            userId,
+            classId,
+            status: BOOKING_STATUSES.CONFIRMED,
+          },
+        });
       }
 
-      return tx.booking.create({
-        data: {
-          userId,
-          classId,
-          status: BOOKING_STATUSES.CONFIRMED,
-        },
+      logger.info(`Class booking confirmed: ${classId} by user ${userId}`, {
+        bookingId: bookingRecord.id,
+        classId,
+        userId,
       });
+
+      return bookingRecord;
     });
   }
 
@@ -161,10 +172,18 @@ export class ClassService {
       throw new NotFoundError('Active booking not found for this class.');
     }
 
-    return prisma.booking.update({
+    const cancelled = await prisma.booking.update({
       where: { id: booking.id },
       data: { status: BOOKING_STATUSES.CANCELLED },
     });
+
+    logger.info(`Class booking cancelled: ${classId} by user ${userId}`, {
+      bookingId: booking.id,
+      classId,
+      userId,
+    });
+
+    return cancelled;
   }
 
   /**
@@ -179,7 +198,7 @@ export class ClassService {
       throw new NotFoundError('Trainer profile not found.');
     }
 
-    return prisma.class.create({
+    const newClass = await prisma.class.create({
       data: {
         trainerId: input.trainerId,
         title: input.title,
@@ -189,5 +208,14 @@ export class ClassService {
         capacity: input.capacity,
       },
     });
+
+    logger.info(`Admin created new class: ${newClass.id} (${newClass.title})`, {
+      classId: newClass.id,
+      trainerId: input.trainerId,
+      title: input.title,
+      capacity: input.capacity,
+    });
+
+    return newClass;
   }
 }

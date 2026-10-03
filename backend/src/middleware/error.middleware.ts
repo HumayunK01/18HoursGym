@@ -3,20 +3,32 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../types/api.types.js';
 import { HTTP_STATUS, ERROR_CODES } from '../config/constants.js';
 import { env } from '../config/env.js';
+import { logger } from '../utils/logger.js';
 
 export function errorHandler(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void {
-  // 1. Handled Operational Errors
+  const requestId = req.id;
+
+  // 1. Handled Operational Errors (Expected client errors, validation, auth, conflicts)
   if (err instanceof AppError) {
+    logger.warn(`Operational error [${err.errorCode}]: ${err.message}`, {
+      requestId,
+      method: req.method,
+      route: req.originalUrl,
+      statusCode: err.statusCode,
+      error: { code: err.errorCode, message: err.message },
+    });
+
     res.status(err.statusCode).json({
       success: false,
       error: {
         code: err.errorCode,
         message: err.message,
+        requestId,
         details: err.details,
       },
     });
@@ -32,6 +44,7 @@ export function errorHandler(
         error: {
           code: ERROR_CODES.CONFLICT,
           message: `A record with this ${target} already exists.`,
+          requestId,
         },
       });
       return;
@@ -42,6 +55,7 @@ export function errorHandler(
         error: {
           code: ERROR_CODES.RESOURCE_NOT_FOUND,
           message: 'Requested record was not found.',
+          requestId,
         },
       });
       return;
@@ -52,14 +66,23 @@ export function errorHandler(
         error: {
           code: ERROR_CODES.VALIDATION_ERROR,
           message: 'Invalid identifier format.',
+          requestId,
         },
       });
       return;
     }
   }
 
-  // 3. Unhandled Server Errors (Prevent Leaking DB internals or Stack Traces in Production)
-  console.error('💥 Unhandled Exception:', err);
+  // 3. Unhandled Server Errors (Unexpected exceptions)
+  logger.error(`Unhandled Exception: ${err.message}`, {
+    requestId,
+    method: req.method,
+    route: req.originalUrl,
+    error: {
+      message: err.message,
+      stack: env.NODE_ENV !== 'production' ? err.stack : undefined,
+    },
+  });
 
   res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
     success: false,
@@ -69,6 +92,7 @@ export function errorHandler(
         env.NODE_ENV === 'production'
           ? 'An internal server error occurred.'
           : err.message || 'An internal server error occurred.',
+      requestId,
     },
   });
 }

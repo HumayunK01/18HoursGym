@@ -13,9 +13,16 @@ import { swaggerDocument } from './config/swagger.js';
 
 import { prisma } from './config/db.js';
 
+import { requestIdMiddleware } from './middleware/request-id.middleware.js';
+import { requestLogger } from './middleware/request-logger.middleware.js';
+
 export const app = express();
 
-// 1. Security Headers (Strict CSP on all API routes, customized for Swagger on /api/docs)
+// 1. Request Correlation & Observability (Applied earliest in the chain)
+app.use(requestIdMiddleware);
+app.use(requestLogger);
+
+// 2. Security Headers (Strict CSP on all API routes, customized for Swagger on /api/docs)
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -39,25 +46,56 @@ app.use(
   })
 );
 
-// 2. CORS Whitelisting
+// 3. CORS Whitelisting
 app.use(
   cors({
     origin: env.CLIENT_URL,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
   })
 );
 
-// 3. Body Parsing with Safe Bounds (DoS mitigation)
+// 4. Body Parsing with Safe Bounds (DoS mitigation)
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
-// 4. Global Rate Limiter
+// 5. Global Rate Limiter
 app.use(globalLimiter);
 
-// 5. Health Check
+// 6. Health & Observability Probes
+// Liveness: Process is alive (no dependency check)
+app.get('/health/live', (_req, res) => {
+  res.status(200).json({
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// Readiness: Application can serve traffic requiring external dependencies (PostgreSQL)
+app.get('/health/ready', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({
+      status: 'ready',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unready',
+      database: 'disconnected',
+      error: 'Database connection unavailable',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  }
+});
+
+// Overall Health (Backward compatibility)
 app.get('/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;

@@ -55,6 +55,7 @@ export class UserService {
 
     const passes = await prisma.passPurchase.findMany({
       where: { userId },
+      take: 50,
       include: {
         plan: true,
         payments: {
@@ -77,6 +78,7 @@ export class UserService {
   static async getBookings(userId: string) {
     const bookings = await prisma.booking.findMany({
       where: { userId },
+      take: 100,
       include: {
         gymClass: {
           include: {

@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import { NotFoundError, AppError, ConflictError } from '../types/api.types.js';
 import { PASS_STATUSES, PAYMENT_STATUSES, HTTP_STATUS, ERROR_CODES } from '../config/constants.js';
 import { MockPayInput } from '../types/schemas/checkout.schema.js';
+import { logger } from '../utils/logger.js';
 
 export interface PaymentGateway {
   createIntent(userId: string, planId: string): Promise<any>;
@@ -143,13 +144,22 @@ export class PaymentService {
         });
       }
 
-      return {
+      const result = {
         success: isSuccess,
         paymentId: updatedPayment.id,
         transactionRef: updatedPayment.transactionRef,
         status: updatedPayment.status,
         passActivated: isSuccess,
       };
+
+      logger.info(`Payment processed: ${updatedPayment.transactionRef} [${newStatus}]`, {
+        userId,
+        paymentId: updatedPayment.id,
+        status: newStatus,
+        passActivated: isSuccess,
+      });
+
+      return result;
     });
   }
 
@@ -187,6 +197,11 @@ export class PaymentService {
           data: { status: PASS_STATUSES.CANCELLED },
         });
       }
+
+      logger.info(`Payment refunded: ${paymentId}`, {
+        paymentId,
+        status: PAYMENT_STATUSES.REFUNDED,
+      });
 
       return updated;
     });
