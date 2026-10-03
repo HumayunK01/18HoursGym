@@ -1,13 +1,13 @@
 import crypto from 'crypto';
 import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
-import { NotFoundError, AppError } from '../types/api.types.js';
+import { NotFoundError, AppError, ConflictError } from '../types/api.types.js';
 import { PASS_STATUSES, PAYMENT_STATUSES, HTTP_STATUS, ERROR_CODES } from '../config/constants.js';
 import { MockPayInput } from '../types/schemas/checkout.schema.js';
 
 export interface PaymentGateway {
   createIntent(userId: string, planId: string): Promise<any>;
-  processPayment(input: MockPayInput): Promise<any>;
+  processPayment(input: MockPayInput, userId: string): Promise<any>;
 }
 
 export class PaymentService {
@@ -78,36 +78,50 @@ export class PaymentService {
   }
 
   /**
-   * Simulates processing payment with simulated latency and customizable outcome.
+   * Simulates processing payment with atomic state transition validation and row locking.
+   * Valid transitions:
+   * PENDING -> SUCCESS
+   * PENDING -> FAILED
    */
   static async processPayment(input: MockPayInput, userId: string) {
-    // Artificial latency for sandbox realism
-    await new Promise((resolve) => setTimeout(resolve, env.MOCK_PAYMENT_LATENCY_MS));
-
-    const payment = await prisma.payment.findUnique({
-      where: { id: input.paymentId },
-      include: { passPurchase: true },
-    });
-
-    if (!payment) {
-      throw new NotFoundError('Payment record not found.');
+    if (env.NODE_ENV !== 'test') {
+      await new Promise((resolve) => setTimeout(resolve, env.MOCK_PAYMENT_LATENCY_MS));
     }
-
-    if (payment.userId !== userId) {
-      throw new AppError('Unauthorized access to payment.', HTTP_STATUS.FORBIDDEN, ERROR_CODES.AUTHORIZATION_ERROR);
-    }
-
-    if (payment.status === PAYMENT_STATUSES.SUCCESS) {
-      throw new AppError('This payment has already been successfully processed.', HTTP_STATUS.CONFLICT, ERROR_CODES.CONFLICT);
-    }
-
-    const isSuccess = input.simulateOutcome === 'SUCCESS';
 
     return prisma.$transaction(async (tx) => {
+      // Row-level lock on payment to serialize concurrent payment attempts on the same order
+      const locked = await tx.$queryRaw<
+        Array<{ id: string; status: string; user_id: string; pass_purchase_id: string | null }>
+      >`SELECT id, status, user_id, pass_purchase_id FROM payments WHERE id = ${input.paymentId}::uuid FOR UPDATE`;
+
+      if (!locked || locked.length === 0) {
+        throw new NotFoundError('Payment record not found.');
+      }
+
+      const payment = locked[0];
+
+      if (payment.user_id !== userId) {
+        throw new AppError('Unauthorized access to payment.', HTTP_STATUS.FORBIDDEN, ERROR_CODES.AUTHORIZATION_ERROR);
+      }
+
+      // State Transition Enforcement:
+      // Only PENDING payments can transition to SUCCESS or FAILED
+      if (payment.status !== PAYMENT_STATUSES.PENDING) {
+        if (payment.status === PAYMENT_STATUSES.SUCCESS) {
+          throw new ConflictError('This payment has already been successfully processed.');
+        }
+        throw new ConflictError(
+          `Invalid payment state transition. Cannot process payment already in ${payment.status} status.`
+        );
+      }
+
+      const isSuccess = input.simulateOutcome === 'SUCCESS';
+      const newStatus = isSuccess ? PAYMENT_STATUSES.SUCCESS : PAYMENT_STATUSES.FAILED;
+
       const updatedPayment = await tx.payment.update({
         where: { id: payment.id },
         data: {
-          status: isSuccess ? PAYMENT_STATUSES.SUCCESS : PAYMENT_STATUSES.FAILED,
+          status: newStatus,
           paymentMethod: input.paymentMethod,
           gatewayResponse: {
             mockProvider: 'GymSandboxGateway',
@@ -119,9 +133,10 @@ export class PaymentService {
         },
       });
 
-      if (isSuccess && payment.passPurchaseId) {
+      // Preserve transactional consistency: activate pass ONLY on successful payment
+      if (isSuccess && payment.pass_purchase_id) {
         await tx.passPurchase.update({
-          where: { id: payment.passPurchaseId },
+          where: { id: payment.pass_purchase_id },
           data: {
             status: PASS_STATUSES.ACTIVE,
           },
@@ -135,6 +150,45 @@ export class PaymentService {
         status: updatedPayment.status,
         passActivated: isSuccess,
       };
+    });
+  }
+
+  /**
+   * Refunds a completed payment and deactivates the corresponding pass purchase.
+   * Valid transition:
+   * SUCCESS -> REFUNDED
+   */
+  static async refundPayment(paymentId: string) {
+    return prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        Array<{ id: string; status: string; pass_purchase_id: string | null }>
+      >`SELECT id, status, pass_purchase_id FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`;
+
+      if (!locked || locked.length === 0) {
+        throw new NotFoundError('Payment record not found.');
+      }
+
+      const payment = locked[0];
+
+      if (payment.status !== PAYMENT_STATUSES.SUCCESS) {
+        throw new ConflictError(
+          `Invalid payment state transition. Only SUCCESS payments can be refunded (current status: ${payment.status}).`
+        );
+      }
+
+      const updated = await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: PAYMENT_STATUSES.REFUNDED },
+      });
+
+      if (payment.pass_purchase_id) {
+        await tx.passPurchase.update({
+          where: { id: payment.pass_purchase_id },
+          data: { status: PASS_STATUSES.CANCELLED },
+        });
+      }
+
+      return updated;
     });
   }
 

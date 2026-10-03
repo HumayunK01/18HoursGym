@@ -11,6 +11,8 @@ import { NotFoundError } from './types/api.types.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerDocument } from './config/swagger.js';
 
+import { prisma } from './config/db.js';
+
 export const app = express();
 
 // 1. Security Headers (Disable CSP on /api/docs so Swagger UI assets load cleanly)
@@ -42,12 +44,23 @@ app.use(cookieParser());
 app.use(globalLimiter);
 
 // 5. Health Check
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({
+      status: 'healthy',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      database: 'disconnected',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  }
 });
 
 // 6. Interactive Swagger Documentation

@@ -65,8 +65,13 @@ export class AuthController {
     }
   }
 
-  static async logout(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+      if (refreshToken) {
+        await AuthService.logout(refreshToken);
+      }
+
       res.clearCookie('refreshToken', {
         httpOnly: true,
         secure: env.NODE_ENV === 'production',

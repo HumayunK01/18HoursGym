@@ -89,32 +89,33 @@ export class ClassService {
       );
     }
 
-    // 2. Atomic Transaction: Check capacity and insert booking
+    // 2. Atomic Transaction: Check capacity and insert booking with row-level locking
     return prisma.$transaction(async (tx) => {
-      const targetClass = await tx.class.findUnique({
-        where: { id: classId },
-        include: {
-          _count: {
-            select: {
-              bookings: { where: { status: BOOKING_STATUSES.CONFIRMED } },
-            },
-          },
-        },
-      });
+      // FOR UPDATE locks the class row exclusively in PostgreSQL.
+      // Concurrent transactions attempting to book this class must wait, preventing overbooking.
+      const lockedClass = await tx.$queryRaw<
+        Array<{ id: string; capacity: number; status: string; start_time: Date }>
+      >`SELECT id, capacity, status, start_time FROM classes WHERE id = ${classId}::uuid FOR UPDATE`;
 
-      if (!targetClass) {
+      if (!lockedClass || lockedClass.length === 0) {
         throw new NotFoundError('Class not found.');
       }
+
+      const targetClass = lockedClass[0];
 
       if (targetClass.status !== CLASS_STATUSES.SCHEDULED) {
         throw new AppError('This class is no longer open for registration.', HTTP_STATUS.BAD_REQUEST);
       }
 
-      if (new Date() >= targetClass.startTime) {
+      if (new Date() >= new Date(targetClass.start_time)) {
         throw new AppError('Cannot book a class that has already started.', HTTP_STATUS.BAD_REQUEST);
       }
 
-      if (targetClass._count.bookings >= targetClass.capacity) {
+      const confirmedCount = await tx.booking.count({
+        where: { classId, status: BOOKING_STATUSES.CONFIRMED },
+      });
+
+      if (confirmedCount >= targetClass.capacity) {
         throw new ConflictError('This class is completely fully booked.');
       }
 

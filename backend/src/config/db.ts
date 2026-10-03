@@ -22,7 +22,9 @@ export async function connectDB(): Promise<void> {
     console.log('✅ PostgreSQL database connected successfully.');
   } catch (error) {
     console.error('❌ Database connection failure:', error);
-    // Don't kill process in dev to allow migrations/docker setup
+    if (env.NODE_ENV === 'production') {
+      throw error;
+    }
   }
 }
 
