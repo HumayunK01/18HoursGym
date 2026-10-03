@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Outer Ring -->
+  <circle cx="100" cy="100" r="92" stroke="#22C55E" stroke-width="6" />
+  <circle cx="100" cy="100" r="82" stroke="#15803D" stroke-width="2" stroke-dasharray="6 4" />
+  
+  <!-- 3 Stars at the top -->
+  <polygon points="100,28 103,36 112,36 105,42 108,50 100,45 92,50 95,42 88,36 97,36" fill="#22C55E" />
+  <polygon points="80,34 82,40 89,40 84,45 86,51 80,47 74,51 76,45 71,40 78,40" fill="#22C55E" transform="scale(0.8) translate(20, 10)" />
+  <polygon points="120,34 122,40 129,40 124,45 126,51 120,47 114,51 116,45 111,40 118,40" fill="#22C55E" transform="scale(0.8) translate(30, 10)" />
+  
+  <!-- Bodybuilder / Muscle Silhouette -->
+  <path d="M100 58 C94 58 90 62 90 68 C90 74 94 78 100 78 C106 78 110 74 110 68 C110 62 106 58 100 58 Z" fill="#F3F4F6" />
+  <!-- Traps & Shoulders -->
+  <path d="M72 82 C65 82 52 88 48 102 C44 114 54 126 64 120 C70 116 72 104 76 96 C82 92 90 88 100 88 C110 88 118 92 124 96 C128 104 130 116 136 120 C146 126 156 114 152 102 C148 88 135 82 128 82 C120 78 112 76 100 76 C88 76 80 78 72 82 Z" fill="#F3F4F6" />
+  <!-- Chest / Abs -->
+  <path d="M84 98 C88 106 94 110 100 110 C106 110 112 106 116 98 C112 118 108 130 100 134 C92 130 88 118 84 98 Z" fill="#22C55E" opacity="0.9" />
+  <!-- Waist / Belt -->
+  <path d="M78 132 L122 132 L116 148 L84 148 Z" fill="#E5E7EB" />
+  
+  <!-- Bottom Text Banner -->
+  <path d="M40 156 Q100 180 160 156" stroke="#22C55E" stroke-width="14" stroke-linecap="round" fill="none" />
+  <text font-family="'Oswald', sans-serif" font-weight="700" font-size="14" fill="#090A0C" letter-spacing="2">
+    <textPath href="#textPath" startOffset="50%" text-anchor="middle">18 HOURS</textPath>
+  </text>
+  <path id="textPath" d="M44 160 Q100 184 156 160" fill="none" />
+</svg>
