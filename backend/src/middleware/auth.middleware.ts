@@ -19,7 +19,9 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
       throw new UnauthorizedError('Authentication required. Missing token.');
     }
 
-    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as AccessTokenPayload;
+    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET, {
+      algorithms: ['HS256'],
+    }) as AccessTokenPayload;
 
     req.user = {
       id: decoded.userId,

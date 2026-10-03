@@ -7,6 +7,7 @@ const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: env.NODE_ENV === 'production',
   sameSite: 'strict' as const,
+  path: '/api/v1/auth',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
@@ -76,6 +77,7 @@ export class AuthController {
         httpOnly: true,
         secure: env.NODE_ENV === 'production',
         sameSite: 'strict',
+        path: '/api/v1/auth',
       });
 
       res.status(HTTP_STATUS.OK).json({

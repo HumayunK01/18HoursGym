@@ -49,3 +49,19 @@ export const bookingLimiter = rateLimit({
   },
   statusCode: HTTP_STATUS.TOO_MANY_REQUESTS,
 });
+
+export const paymentLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 15, // 15 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  message: {
+    success: false,
+    error: {
+      code: ERROR_CODES.RATE_LIMIT_EXCEEDED,
+      message: 'Too many payment attempts. Please wait a moment before trying again.',
+    },
+  },
+  statusCode: HTTP_STATUS.TOO_MANY_REQUESTS,
+});

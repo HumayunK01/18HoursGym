@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -15,10 +15,24 @@ import { prisma } from './config/db.js';
 
 export const app = express();
 
-// 1. Security Headers (Disable CSP on /api/docs so Swagger UI assets load cleanly)
+// 1. Security Headers (Strict CSP on all API routes, customized for Swagger on /api/docs)
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        fontSrc: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
+        styleSrc: ["'self'"],
+        upgradeInsecureRequests: [],
+      },
+    },
     frameguard: { action: 'deny' },
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
     noSniff: true,
@@ -63,8 +77,19 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// 6. Interactive Swagger Documentation
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// 6. Interactive Swagger Documentation (Scoped CSP override for UI assets)
+app.use(
+  '/api/docs',
+  (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: validator.swagger.io; font-src 'self' https: data:;"
+    );
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerDocument)
+);
 app.get('/docs', (_req, res) => res.redirect('/api/docs'));
 app.get('/', (_req, res) => res.redirect('/api/docs'));
 

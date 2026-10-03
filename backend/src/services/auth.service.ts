@@ -25,6 +25,7 @@ export class AuthService {
   static generateAccessToken(userId: string, email: string, role: RoleType): string {
     const payload: AccessTokenPayload = { userId, email, role };
     return jwt.sign(payload, env.JWT_ACCESS_SECRET, {
+      algorithm: 'HS256',
       expiresIn: env.JWT_ACCESS_EXPIRES_IN as NonNullable<SignOptions['expiresIn']>,
     });
   }
@@ -171,7 +172,11 @@ export class AuthService {
 
     // 4. User account status check
     if (session.user.status !== 'ACTIVE') {
-      throw new UnauthorizedError('User account suspended.');
+      await prisma.session.updateMany({
+        where: { userId: session.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw new ForbiddenError('This account has been suspended. Please contact gym administration.');
     }
 
     // 5. Rotate: Issue new refresh token, create new session, and revoke old session atomically

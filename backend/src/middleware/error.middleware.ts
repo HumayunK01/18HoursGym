@@ -46,6 +46,16 @@ export function errorHandler(
       });
       return;
     }
+    if (err.code === 'P2023') {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Invalid identifier format.',
+        },
+      });
+      return;
+    }
   }
 
   // 3. Unhandled Server Errors (Prevent Leaking DB internals or Stack Traces in Production)

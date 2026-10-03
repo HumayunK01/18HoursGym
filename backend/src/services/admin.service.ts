@@ -122,10 +122,20 @@ export class AdminService {
       throw new NotFoundError('User not found.');
     }
 
-    return prisma.user.update({
-      where: { id: userId },
-      data: { status },
-      select: { id: true, email: true, status: true },
+    return prisma.$transaction(async (tx) => {
+      if (status === 'SUSPENDED') {
+        // Immediately revoke all active sessions to terminate user access
+        await tx.session.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+
+      return tx.user.update({
+        where: { id: userId },
+        data: { status },
+        select: { id: true, email: true, status: true },
+      });
     });
   }
 
