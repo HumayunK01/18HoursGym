@@ -23,6 +23,13 @@ async function main() {
       features: ['All Starter features', 'Unlimited group workout classes', 'Sauna & recovery zone', 'Guest pass (1/month)'],
     },
     {
+      name: '6-Months Semi-Annual Pass',
+      description: 'Serious athlete commitment for sustained hypertrophy and strength gains.',
+      durationInDays: 180,
+      price: 229.0,
+      features: ['All Pro features', '15-day pass freezing allowance', 'Personalized diet & macro guide', 'Monthly physique check-in'],
+    },
+    {
       name: '1-Year Elite VIP Pass',
       description: 'Maximum value annual pass with priority bookings and personalized training perks.',
       durationInDays: 365,
