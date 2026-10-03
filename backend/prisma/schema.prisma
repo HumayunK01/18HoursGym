@@ -1,0 +1,170 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  MEMBER
+  TRAINER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum PassStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum ClassStatus {
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+model User {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String     @unique @db.VarChar(255)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  firstName    String     @map("first_name") @db.VarChar(100)
+  lastName     String     @map("last_name") @db.VarChar(100)
+  phone        String?    @db.VarChar(30)
+  role         Role       @default(MEMBER)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  trainerProfile TrainerProfile?
+  passes         PassPurchase[]
+  payments       Payment[]
+  bookings       Booking[]
+
+  @@map("users")
+}
+
+model TrainerProfile {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio             String?  @db.Text
+  specialization  String   @db.VarChar(150)
+  yearsExperience Int      @default(1) @map("years_experience")
+  avatarUrl       String?  @map("avatar_url") @db.VarChar(500)
+
+  classes         Class[]
+
+  @@map("trainer_profiles")
+}
+
+model MembershipPlan {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String         @db.VarChar(100)
+  description    String?        @db.Text
+  durationInDays Int            @map("duration_in_days")
+  price          Decimal        @db.Decimal(10, 2)
+  isActive       Boolean        @default(true) @map("is_active")
+  features       Json?          @default("[]")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  purchases      PassPurchase[]
+
+  @@index([isActive])
+  @@map("membership_plans")
+}
+
+model PassPurchase {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String         @map("user_id") @db.Uuid
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId     String         @map("plan_id") @db.Uuid
+  plan       MembershipPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  startDate  DateTime       @map("start_date") @db.Timestamptz(6)
+  endDate    DateTime       @map("end_date") @db.Timestamptz(6)
+  status     PassStatus     @default(ACTIVE)
+  amountPaid Decimal        @map("amount_paid") @db.Decimal(10, 2)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payments   Payment[]
+
+  @@index([userId, status])
+  @@index([endDate])
+  @@map("pass_purchases")
+}
+
+model Payment {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passPurchaseId  String?       @map("pass_purchase_id") @db.Uuid
+  passPurchase    PassPurchase? @relation(fields: [passPurchaseId], references: [id], onDelete: SetNull)
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("USD") @db.VarChar(3)
+  status          PaymentStatus @default(PENDING)
+  paymentMethod   String        @default("MOCK_CARD") @map("payment_method") @db.VarChar(50)
+  transactionRef  String        @unique @map("transaction_ref") @db.VarChar(100)
+  gatewayResponse Json?         @map("gateway_response")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, status])
+  @@map("payments")
+}
+
+model Class {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  trainerId   String         @map("trainer_id") @db.Uuid
+  trainer     TrainerProfile @relation(fields: [trainerId], references: [id], onDelete: Restrict)
+  title       String         @db.VarChar(150)
+  description String?        @db.Text
+  startTime   DateTime       @map("start_time") @db.Timestamptz(6)
+  endTime     DateTime       @map("end_time") @db.Timestamptz(6)
+  capacity    Int            @default(20)
+  status      ClassStatus    @default(SCHEDULED)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  bookings    Booking[]
+
+  @@index([startTime, status])
+  @@index([trainerId])
+  @@map("classes")
+}
+
+model Booking {
+  id       String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId   String        @map("user_id") @db.Uuid
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId  String        @map("class_id") @db.Uuid
+  gymClass Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  status   BookingStatus @default(CONFIRMED)
+  bookedAt DateTime      @default(now()) @map("booked_at") @db.Timestamptz(6)
+
+  @@unique([userId, classId])
+  @@index([classId, status])
+  @@map("bookings")
+}
