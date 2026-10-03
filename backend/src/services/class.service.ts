@@ -5,18 +5,49 @@ import { PassService } from './pass.service.js';
 import { CreateClassInput } from '../types/schemas/class.schema.js';
 import { logger } from '../utils/logger.js';
 
+import { Prisma, ClassStatus } from '@prisma/client';
+
+export interface ClassQueryFilter {
+  trainerId?: string;
+  status?: ClassStatus;
+  startDate?: string;
+  endDate?: string;
+}
+
 export class ClassService {
   /**
-   * Lists upcoming scheduled classes with trainer info and remaining spots.
+   * Lists upcoming scheduled classes with trainer info, filters, and remaining spots.
    */
-  static async getClasses(trainerId?: string) {
+  static async getClasses(filter?: ClassQueryFilter) {
     const now = new Date();
+    const where: Prisma.ClassWhereInput = {};
+
+    if (filter?.trainerId) {
+      where.trainerId = filter.trainerId;
+    }
+
+    if (filter?.status) {
+      where.status = filter.status;
+    } else {
+      where.status = CLASS_STATUSES.SCHEDULED;
+    }
+
+    if (filter?.startDate || filter?.endDate) {
+      where.startTime = {};
+      if (filter.startDate) {
+        where.startTime.gte = new Date(filter.startDate);
+      } else {
+        where.startTime.gte = now;
+      }
+      if (filter.endDate) {
+        where.startTime.lte = new Date(filter.endDate);
+      }
+    } else {
+      where.startTime = { gte: now };
+    }
+
     const classes = await prisma.class.findMany({
-      where: {
-        ...(trainerId ? { trainerId } : {}),
-        startTime: { gte: now },
-        status: CLASS_STATUSES.SCHEDULED,
-      },
+      where,
       include: {
         trainer: {
           include: {

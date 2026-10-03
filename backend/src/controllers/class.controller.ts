@@ -5,8 +5,13 @@ import { HTTP_STATUS } from '../config/constants.js';
 export class ClassController {
   static async getClasses(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const trainerId = req.query.trainerId as string | undefined;
-      const classes = await ClassService.getClasses(trainerId);
+      const { trainerId, status, startDate, endDate } = req.query as {
+        trainerId?: string;
+        status?: any;
+        startDate?: string;
+        endDate?: string;
+      };
+      const classes = await ClassService.getClasses({ trainerId, status, startDate, endDate });
       res.status(HTTP_STATUS.OK).json({
         success: true,
         data: classes,

@@ -1,4 +1,5 @@
 import { prisma } from '../config/db.js';
+import { Prisma, UserStatus, PaymentStatus } from '@prisma/client';
 import { ROLES, PASS_STATUSES, PAYMENT_STATUSES, CLASS_STATUSES } from '../config/constants.js';
 import { NotFoundError } from '../types/api.types.js';
 import { logger } from '../utils/logger.js';
@@ -60,12 +61,12 @@ export class AdminService {
   /**
    * Paginated member roster with search and pass status filter.
    */
-  static async getMembers(query: { search?: string; status?: string; page?: number; limit?: number }) {
+  static async getMembers(query: { search?: string; status?: UserStatus; page?: number; limit?: number }) {
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = { role: ROLES.MEMBER };
+    const where: Prisma.UserWhereInput = { role: ROLES.MEMBER };
 
     if (query.search) {
       where.OR = [
@@ -153,13 +154,24 @@ export class AdminService {
   }
 
   /**
-   * Retrieves all payments for the admin ledger.
+   * Retrieves payments for the admin ledger with optional status and user filtering.
    */
-  static async getPayments(page = 1, limit = 20) {
+  static async getPayments(query: { page?: number; limit?: number; status?: PaymentStatus; userId?: string } = {}) {
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
+
+    const where: Prisma.PaymentWhereInput = {};
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.userId) {
+      where.userId = query.userId;
+    }
 
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -172,7 +184,7 @@ export class AdminService {
           },
         },
       }),
-      prisma.payment.count(),
+      prisma.payment.count({ where }),
     ]);
 
     return {

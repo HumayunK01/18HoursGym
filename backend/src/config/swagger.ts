@@ -83,6 +83,15 @@ export const swaggerDocument = {
         properties: {
           success: { type: 'boolean', example: true },
           data: { type: 'object' },
+          meta: {
+            type: 'object',
+            properties: {
+              page: { type: 'integer', example: 1 },
+              limit: { type: 'integer', example: 20 },
+              total: { type: 'integer', example: 45 },
+              totalPages: { type: 'integer', example: 3 },
+            },
+          },
         },
       },
       ApiError: {
@@ -94,6 +103,7 @@ export const swaggerDocument = {
             properties: {
               code: { type: 'string', example: 'VALIDATION_ERROR' },
               message: { type: 'string', example: 'Invalid input data' },
+              requestId: { type: 'string', example: 'd3b07384-d113-46fb-a0f5-48b479261a84' },
               details: {
                 type: 'array',
                 items: {
@@ -230,6 +240,10 @@ export const swaggerDocument = {
         tags: ['User Profile'],
         summary: 'View pass purchase history and expiration dates',
         security: [{ BearerAuth: [] }],
+        parameters: [
+          { in: 'query', name: 'page', schema: { type: 'integer', default: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', default: 20 } },
+        ],
         responses: {
           200: { description: 'Membership history list' },
         },
@@ -240,6 +254,10 @@ export const swaggerDocument = {
         tags: ['User Profile'],
         summary: 'View upcoming and past class bookings',
         security: [{ BearerAuth: [] }],
+        parameters: [
+          { in: 'query', name: 'page', schema: { type: 'integer', default: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', default: 20 } },
+        ],
         responses: {
           200: { description: 'Member bookings list' },
         },
@@ -337,6 +355,9 @@ export const swaggerDocument = {
         summary: 'Explore upcoming group workout sessions and spot availability',
         parameters: [
           { in: 'query', name: 'trainerId', schema: { type: 'string', format: 'uuid' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['SCHEDULED', 'ONGOING', 'COMPLETED', 'CANCELLED'] } },
+          { in: 'query', name: 'startDate', schema: { type: 'string', format: 'date' } },
+          { in: 'query', name: 'endDate', schema: { type: 'string', format: 'date' } },
         ],
         responses: {
           200: { description: 'Upcoming classes' },
@@ -488,6 +509,8 @@ export const swaggerDocument = {
         summary: 'View complete transaction and revenue ledger',
         security: [{ BearerAuth: [] }],
         parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'] } },
+          { in: 'query', name: 'userId', schema: { type: 'string', format: 'uuid' } },
           { in: 'query', name: 'page', schema: { type: 'integer', default: 1 } },
           { in: 'query', name: 'limit', schema: { type: 'integer', default: 20 } },
         ],

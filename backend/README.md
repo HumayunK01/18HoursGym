@@ -3,10 +3,11 @@
 Backend API for the gym management system. Handles member authentication, fixed-duration membership passes, workout class schedules, capacity-checked reservations, mock checkout, and admin analytics.
 
 ## Tech Stack
-* Node.js (TypeScript)
-* Express
+* Node.js (TypeScript strict mode)
+* Express 5
 * PostgreSQL
 * Prisma ORM
+* Vitest & Supertest
 * Zod
 * Swagger (OpenAPI 3.0)
 
@@ -14,7 +15,7 @@ Backend API for the gym management system. Handles member authentication, fixed-
 
 ## Directory Structure
 
-The backend separates responsibilities across six folders in `src/`:
+The backend separates responsibilities across modular directories in `src/`:
 
 ```
 backend/
@@ -23,17 +24,20 @@ backend/
 │   └── seed.ts               # Seed data for admin, trainers, passes, and classes
 ├── src/
 │   ├── config/               # Environment validation (Zod), Prisma client, constants, Swagger
-│   ├── controllers/          # Unwraps requests, sends status codes and responses
-│   ├── middleware/           # Auth tokens, RBAC, Zod validation, rate limits, error handling
+│   ├── controllers/          # Unwraps requests, sends status codes and unified envelopes
+│   ├── middleware/           # Auth tokens, RBAC, Zod validation, rate limits, request IDs, error handling
 │   ├── routes/               # Express routers mounted at /api/v1
-│   ├── services/             # Domain logic, database queries, transactions, payment adapter
-│   ├── types/                # TypeScript interfaces, Express user types, Zod schemas
-│   ├── app.ts                # Express app setup (Helmet, CORS, cookies, rate limits)
-│   └── server.ts             # Starts server, handles SIGINT and SIGTERM shutdowns
+│   ├── services/             # Domain logic, database transactions, concurrency row locks, payments
+│   ├── types/                # TypeScript interfaces, Express types, Zod validation schemas
+│   ├── utils/                # Zero-dependency structured JSON logger with PII scrubbing
+│   ├── app.ts                # Express app setup (Helmet CSP, CORS, cookies, rate limits, health probes)
+│   └── server.ts             # Starts server, manages connection draining and graceful shutdown
+├── tests/                    # 68 integration tests across 7 suites (Auth, Bookings, RBAC, Security, etc.)
 ├── .env.example
 ├── .env
 ├── package.json
-└── tsconfig.json
+├── tsconfig.json
+└── vitest.config.mts
 ```
 
 ---
@@ -48,6 +52,7 @@ erDiagram
     USERS ||--o{ BOOKINGS : "books"
     USERS ||--o| TRAINER_PROFILES : "extends"
     USERS ||--o{ PAYMENTS : "initiates"
+    USERS ||--o{ SESSIONS : "authenticates"
 
     MEMBERSHIP_PLANS ||--o{ PASS_PURCHASES : "specifies"
     PASS_PURCHASES ||--o{ PAYMENTS : "bills"
@@ -131,16 +136,29 @@ erDiagram
         enum status "CONFIRMED, CANCELLED, ATTENDED, NO_SHOW"
         timestamptz booked_at
     }
+
+    SESSIONS {
+        uuid id PK
+        uuid user_id FK
+        string token_hash UK
+        timestamptz expires_at
+        timestamptz revoked_at
+        uuid replaced_by
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 ### Database Decisions
 * **Timestamps**: Uses `timestamptz(6)` on all date and time fields to prevent timezone drift.
-* **Currency**: Uses `Decimal(10, 2)` for prices and payments. Avoids float math errors.
-* **Partial Indexes**:
-  * `idx_passes_user_active`: Indexes active passes on `user_id`. Quick check during class booking.
-  * `idx_classes_upcoming`: Indexes scheduled classes on `start_time`.
-  * `idx_bookings_class_confirmed`: Indexes confirmed bookings on `class_id` for capacity sums.
-* **Double Booking Prevention**: Composite unique constraint on `(user_id, class_id)` blocks duplicate bookings.
+* **Currency**: Uses `Decimal(10, 2)` for prices and payments. Avoids floating-point math inaccuracies.
+* **Indexes**:
+  * `pass_purchases`: `[user_id, status]`, `[end_date]` for active pass evaluation and fast expiration lookups.
+  * `payments`: `[user_id, status]`, `[created_at]` for optimized admin revenue ledger queries.
+  * `classes`: `[start_time, status]`, `[trainer_id]` for upcoming class schedules and trainer filtering.
+  * `bookings`: `[class_id, status]` for spot capacity sums.
+  * `sessions`: `[user_id]`, `[token_hash]` for refresh token lookup, rotation, and revocation.
+* **Double Booking Prevention**: Composite unique constraint on `(user_id, class_id)` guarantees one reservation per member per class.
 
 ---
 
@@ -207,8 +225,10 @@ npm run dev
 
 Endpoints:
 * API root: `http://localhost:5000/api/v1`
-* Interactive docs: `http://localhost:5000/api/docs`
-* Health check: `http://localhost:5000/health`
+* Interactive Swagger docs: `http://localhost:5000/api/docs`
+* Process Liveness probe: `http://localhost:5000/health/live`
+* Service Readiness probe: `http://localhost:5000/health/ready`
+* Overall health check: `http://localhost:5000/health`
 
 ---
 
@@ -226,19 +246,24 @@ The seed script creates three accounts:
 
 ## API Routes
 
-All endpoints live under `/api/v1`.
+All endpoints live under `/api/v1`. Every request returns or generates an `X-Request-Id` correlation header.
+
+### Health Probes
+* `GET /health/live`: Fast process liveness probe (HTTP 200) without database dependencies.
+* `GET /health/ready`: Traffic readiness probe (HTTP 200 / 503) verifying PostgreSQL connectivity via `SELECT 1`.
+* `GET /health`: Backward-compatible overall health check.
 
 ### Auth (`/api/v1/auth`)
 * `POST /signup`: Registers a new member account.
-* `POST /login`: Verifies credentials, returns an access token, sets an HTTP-only refresh cookie.
-* `POST /refresh`: Reads the refresh cookie and issues a new access token.
-* `POST /logout`: Clears the refresh cookie.
+* `POST /login`: Verifies credentials, returns an access token, stores hashed session, and sets an HTTP-only refresh cookie.
+* `POST /refresh`: Validates refresh token against database session, rotates token, detects reuse/theft, and issues a new access token.
+* `POST /logout`: Revokes active session and clears the refresh cookie.
 
 ### User Profile (`/api/v1/users`)
 * `GET /me`: Returns profile details and active pass. Requires auth.
 * `PATCH /me`: Updates first name, last name, or phone. Requires auth.
-* `GET /me/membership`: Lists pass purchase history. Requires auth.
-* `GET /me/bookings`: Lists class bookings. Requires auth.
+* `GET /me/membership`: Lists pass purchase history with pagination (`?page=1&limit=20`). Requires auth.
+* `GET /me/bookings`: Lists class bookings with pagination (`?page=1&limit=20`). Requires auth.
 
 ### Plans (`/api/v1/plans`)
 * `GET /`: Lists active passes (1-Month, 3-Months, 1-Year).
@@ -247,23 +272,23 @@ All endpoints live under `/api/v1`.
 ### Checkout (`/api/v1/checkout`)
 * `POST /create-intent`: Creates a pending pass purchase and payment order. Requires auth.
 * `POST /mock-pay`: Simulates card payment with `SUCCESS` or `FAILED` outcomes. Requires auth.
-* `GET /receipt/:paymentId`: Returns payment receipt. Requires auth.
+* `GET /receipt/:paymentId`: Returns payment receipt. Enforces caller ownership or `ADMIN` role. Requires auth.
 
 ### Classes (`/api/v1/classes`)
-* `GET /`: Lists upcoming scheduled classes and spot counts.
+* `GET /`: Lists upcoming scheduled classes and spot counts (supports `?trainerId=...&status=...&startDate=...&endDate=...`).
 * `GET /:id`: Returns single class details.
-* `POST /:id/book`: Reserves a spot in a class. Requires an active pass and open capacity.
+* `POST /:id/book`: Reserves a spot in a class. Concurrency-safe via row-level locking. Requires an active pass and open capacity.
 * `DELETE /:id/book`: Cancels an existing booking. Requires auth.
 
 ### Admin Dashboard (`/api/v1/admin`)
 Requires `ADMIN` role.
 * `GET /analytics/overview`: Member counts, revenue total, upcoming classes count.
-* `GET /members`: Paginated member roster with search and status filters.
-* `PATCH /members/:id/status`: Suspends or activates a member.
+* `GET /members`: Paginated member roster with `search`, `status`, `page`, and `limit` filters.
+* `PATCH /members/:id/status`: Suspends or activates a member. Revokes all active user sessions on suspension.
 * `POST /plans`: Creates a new pass tier.
 * `PATCH /plans/:id`: Updates an existing pass tier.
 * `POST /classes`: Schedules a new group class.
-* `GET /payments`: Paginated transaction ledger.
+* `GET /payments`: Paginated transaction ledger with `status`, `userId`, `page`, and `limit` filters.
 
 ---
 
@@ -302,9 +327,12 @@ The payment service implements a `PaymentGateway` interface. The mock provider a
 | Command | Action |
 | :--- | :--- |
 | `npm run dev` | Runs the server with `tsx watch` hot reloading |
+| `npm test` | Runs the full Vitest integration test suite (68 tests) |
+| `npm run test:watch` | Runs Vitest in interactive watch mode |
 | `npm run build` | Compiles TypeScript into `dist/` |
 | `npm start` | Runs the production build (`node dist/server.js`) |
 | `npm run prisma:generate` | Updates Prisma Client types |
+| `npm run prisma:migrate` | Runs Prisma migrations in development |
 | `npm run prisma:seed` | Runs `prisma/seed.ts` |
 
 ---

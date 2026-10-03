@@ -29,10 +29,14 @@ export class UserController {
 
   static async getMyMembership(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const passes = await UserService.getMembershipHistory(req.user!.id);
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+      const result = await UserService.getMembershipHistory(req.user!.id, page, limit);
       res.status(HTTP_STATUS.OK).json({
         success: true,
-        data: passes,
+        data: result.passes,
+        meta: result.meta,
       });
     } catch (error) {
       next(error);
@@ -41,10 +45,14 @@ export class UserController {
 
   static async getMyBookings(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const bookings = await UserService.getBookings(req.user!.id);
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+      const result = await UserService.getBookings(req.user!.id, page, limit);
       res.status(HTTP_STATUS.OK).json({
         success: true,
-        data: bookings,
+        data: result.bookings,
+        meta: result.meta,
       });
     } catch (error) {
       next(error);

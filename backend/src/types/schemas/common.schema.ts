@@ -20,6 +20,18 @@ export const memberQuerySchema = paginationQuerySchema.extend({
   }).optional(),
 });
 
+export const paymentLedgerQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'], {
+    message: "Status must be 'PENDING', 'SUCCESS', 'FAILED', or 'REFUNDED'",
+  }).optional(),
+  userId: z.string().uuid('Invalid user ID format. Must be a valid UUID.').optional(),
+});
+
 export const classesQuerySchema = z.object({
   trainerId: z.string().uuid('Invalid trainer ID format. Must be a valid UUID.').optional(),
+  status: z.enum(['SCHEDULED', 'ONGOING', 'COMPLETED', 'CANCELLED'], {
+    message: "Status must be 'SCHEDULED', 'ONGOING', 'COMPLETED', or 'CANCELLED'",
+  }).optional(),
+  startDate: z.string().datetime({ offset: true }).optional().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format must be YYYY-MM-DD').optional()),
+  endDate: z.string().datetime({ offset: true }).optional().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format must be YYYY-MM-DD').optional()),
 });

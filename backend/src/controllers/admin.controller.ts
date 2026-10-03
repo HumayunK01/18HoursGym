@@ -4,6 +4,8 @@ import { PlanService } from '../services/plan.service.js';
 import { ClassService } from '../services/class.service.js';
 import { HTTP_STATUS } from '../config/constants.js';
 
+import { UserStatus, PaymentStatus } from '@prisma/client';
+
 export class AdminController {
   static async getOverview(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -20,7 +22,7 @@ export class AdminController {
   static async getMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const search = req.query.search as string | undefined;
-      const status = req.query.status as string | undefined;
+      const status = req.query.status as UserStatus | undefined;
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
 
@@ -88,8 +90,10 @@ export class AdminController {
     try {
       const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+      const status = req.query.status as any;
+      const userId = req.query.userId as string | undefined;
 
-      const result = await AdminService.getPayments(page, limit);
+      const result = await AdminService.getPayments({ page, limit, status, userId });
       res.status(HTTP_STATUS.OK).json({
         success: true,
         data: result.payments,

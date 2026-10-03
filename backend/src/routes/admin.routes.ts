@@ -10,6 +10,7 @@ import {
   uuidParamSchema,
   paginationQuerySchema,
   memberQuerySchema,
+  paymentLedgerQuerySchema,
 } from '../types/schemas/common.schema.js';
 import { z } from 'zod';
 
@@ -43,4 +44,4 @@ adminRouter.patch(
 adminRouter.post('/classes', validateBody(createClassSchema), AdminController.createClass);
 
 // Payment & Revenue Ledger
-adminRouter.get('/payments', validateQuery(paginationQuerySchema), AdminController.getPayments);
+adminRouter.get('/payments', validateQuery(paymentLedgerQuerySchema), AdminController.getPayments);

@@ -6,9 +6,31 @@ import { PASS_STATUSES, PAYMENT_STATUSES, HTTP_STATUS, ERROR_CODES } from '../co
 import { MockPayInput } from '../types/schemas/checkout.schema.js';
 import { logger } from '../utils/logger.js';
 
+import { Prisma } from '@prisma/client';
+
+export interface PaymentIntentResult {
+  paymentId: string;
+  transactionRef: string;
+  amount: Prisma.Decimal | number;
+  currency: string;
+  plan: {
+    id: string;
+    name: string;
+    durationInDays: number;
+  };
+}
+
+export interface PaymentProcessResult {
+  success: boolean;
+  paymentId: string;
+  transactionRef: string;
+  status: string;
+  passActivated: boolean;
+}
+
 export interface PaymentGateway {
-  createIntent(userId: string, planId: string): Promise<any>;
-  processPayment(input: MockPayInput, userId: string): Promise<any>;
+  createIntent(userId: string, planId: string): Promise<PaymentIntentResult>;
+  processPayment(input: MockPayInput, userId: string): Promise<PaymentProcessResult>;
 }
 
 export class PaymentService {
